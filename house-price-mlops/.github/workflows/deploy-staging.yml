@@ -1,0 +1,54 @@
+name: Deploy to staging
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  deploy-staging:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Build model
+        run: |
+          pip install -r requirements.txt
+          python src/generate_data.py
+          dvc repro
+
+      - name: Build Docker image
+        run: |
+          IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}/house-price-api
+          docker build -t $IMAGE:${GITHUB_REF_NAME} -t $IMAGE:staging .
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+
+      - name: Smoke test container
+        run: |
+          docker run -d -p 8000:8000 -e MODEL_VERSION=${GITHUB_REF_NAME} --name smoke $IMAGE:staging
+          for i in $(seq 1 15); do curl -sf localhost:8000/health && break || sleep 2; done
+          curl -sf -X POST localhost:8000/predict \
+            -H "Content-Type: application/json" \
+            -d '{"area_sqft":1200,"bedrooms":3,"bathrooms":2,"age_years":8,"location":"Pune"}'
+          docker rm -f smoke
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push staging image
+        run: |
+          docker push $IMAGE:${GITHUB_REF_NAME}
+          docker push $IMAGE:staging

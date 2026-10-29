@@ -1,0 +1,8 @@
+.git
+.dvc
+data/
+metrics/
+tests/
+docs/
+__pycache__/
+*.pyc

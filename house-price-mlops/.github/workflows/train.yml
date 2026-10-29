@@ -1,0 +1,37 @@
+name: Train model
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Reproduce pipeline
+        run: |
+          python src/generate_data.py
+          dvc repro
+
+      - name: Show metrics
+        run: |
+          cat metrics/metrics.json
+          dvc metrics show
+
+      - name: Upload model and metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-${{ github.sha }}
+          path: |
+            models/model.pkl
+            metrics/metrics.json
